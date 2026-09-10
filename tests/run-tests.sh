@@ -142,6 +142,30 @@ PYREV
   check "every command invocation names something real" "" "$phantom"
 fi
 
+echo "== every section learn writes is read by an agent =="
+
+# learn files rules under the sections its category table names, in backticks.
+# A section nobody reads is a rule nobody applies.
+for section in $(grep -oE '`\[[a-z-]+\]`' "$ROOT/commands/learn.md" | tr -d '`' | sort -u); do
+  hits=$(grep -l -F -- "## $section" "$ROOT"/agents/norms-*.md | wc -l | tr -d ' ')
+  check "section $section is read by at least one agent" "yes" \
+    "$([ "$hits" -gt 0 ] && echo yes || echo no)"
+done
+
+echo "== the conformity agent reads every applicable section =="
+
+PC="$ROOT/agents/norms-pattern-conformity.md"
+check "conformity agent reads sections beyond type-strictness" "1" \
+  "$(grep -c -F 'Find every other `## [...]` section' "$PC")"
+for owned in test-conventions naming code-hygiene; do
+  check "conformity agent leaves [$owned] to its owner" "1" \
+    "$(grep -c -F "\`[$owned]\`" "$PC")"
+done
+check "conformity agent reads a rule's cited reference before flagging" "1" \
+  "$(grep -c -F 'Reference:' "$PC")"
+check "learn can file a rule under an existing project section" "1" \
+  "$(grep -c -F 'already present in the project' "$ROOT/commands/learn.md")"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

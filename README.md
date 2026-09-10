@@ -34,6 +34,14 @@ in, not inside this plugin — the plugin never bundles or ships one. A copy
 committed here would ship one project's conventions to every other project
 that installs it.
 
+Rules are grouped under `## [section]` headings. Four sections have a fixed
+reader: `[type-strictness]`, `[test-conventions]`, `[naming]` and
+`[code-hygiene]`. Any other section is read by the pattern-conformity agent,
+and its first prose line is its scope: a sentence naming a path (for example
+"Rules specific to migrations under `migrations/`") restricts the section to
+files under that path, and a section with no such sentence applies to every
+source file.
+
 ## GitHub dependency
 
 The plugin's manifest (`.claude-plugin/plugin.json`) declares `"dependencies":

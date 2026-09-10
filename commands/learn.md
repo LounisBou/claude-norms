@@ -88,6 +88,7 @@ For each resolved thread, read the comment body and the file path. Categorize in
 | type-strictness | `[type-strictness]` | Mentions types, unions, visibility, readonly, class constants |
 | naming | `[naming]` | Mentions variable/method/parameter naming, semantics |
 | code-hygiene | `[code-hygiene]` | Mentions comments, blank lines, coverage annotations, formatting |
+| existing section | the heading of a domain section already present in the project's CONTRIBUTING.md | The comment fits that section's scope sentence better than the four above (a rule about migrations when a migration section exists). Never create a new domain section from a review thread |
 | **skip** | — | One-off questions, architecture discussions, subjective opinions |
 
 **A thread is generalizable (keep) when:**
