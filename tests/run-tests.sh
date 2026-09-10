@@ -93,6 +93,14 @@ mkdir -p "$WORK/override"
 check "CLAUDE_GITHUB_ROOT wins" "$WORK/override" \
   "$(CLAUDE_GITHUB_ROOT="$WORK/override" python3 "$RESOLVE" 2>&1)"
 
+# A non-empty override that names nothing on disk is a misconfiguration, not a
+# resolution. Returned as-is it satisfies the caller's `|| exit 1`, and the run
+# fails later, somewhere further from the cause.
+bad_override=$(CLAUDE_GITHUB_ROOT=/nonexistent/garbage python3 "$RESOLVE" 2>&1)
+bad_code=$?
+check "a nonexistent override exits 1 naming the path" "1 named" \
+  "$bad_code $(printf '%s' "$bad_override" | grep -q '^error:.*/nonexistent/garbage' && echo named || echo unnamed)"
+
 printf '{"version":2,"plugins":{}}' > "$WORK/none.json"
 # -u CLAUDE_GITHUB_ROOT: the suite is run with that override set, and the
 # override outranks the state file. Left in place it would mask the very
@@ -119,7 +127,10 @@ bad = []
 for name in ("check", "learn"):
     path = os.path.join(sys.argv[2], "commands", name + ".md")
     for i, line in enumerate(open(path, encoding="utf-8"), 1):
-        m = re.search(r'python3\s+"\$GH"\s+([a-z][a-z0-9-]+)', line)
+        # All four spellings of the same call. The quoted form was the only
+        # one matched, so `python3 $GH pr-frobnicate` slipped past the one
+        # check that catches a phantom subcommand.
+        m = re.search(r'python3\s+(?:"\$GH"|\$GH|"\$\{GH\}"|\$\{GH\})\s+([a-z][a-z0-9-]+)', line)
         if m and m.group(1) not in subs:
             bad.append("%s:%d subcommand %s" % (name, i, m.group(1)))
         for f in re.finditer(r'--format\s+([a-z][a-z0-9-]+)', line):
