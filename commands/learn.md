@@ -34,13 +34,16 @@ Learn project-specific code norms from resolved PR review threads and add them t
 
 ### Step 1: Prerequisites
 
-Verify the github-curl skill is available:
+Locate the `github` plugin. The resolver reads the platform's install record; it
+never builds a cache path by hand:
 
 ```bash
-ls .claude/skills/github-curl/gh-api.sh 2>/dev/null || echo "ERROR: github-curl skill not found. Install it first."
+GH_ROOT=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/resolve_github.py") || exit 1
+GH="$GH_ROOT/skills/github-curl/gh.py"
 ```
 
-If not found, stop and inform the user.
+If it exits non-zero it prints an `error:` line and a `fix:` line. Stop and show
+both to the user.
 
 ### Step 2: Parse PR numbers
 
@@ -54,12 +57,15 @@ Example: /norms:learn 1383 1375 1380
 
 ### Step 3: Fetch resolved threads
 
-For each PR number, use the github-curl skill:
+For each PR number, call the tool. Formatting is a flag now, not a second script
+in a pipe. Each Bash call is a fresh shell, so resolve `GH` again here rather
+than relying on the variables set in Step 1:
 
 ```bash
-SKILL_DIR=".claude/skills/github-curl"
-bash "$SKILL_DIR/gh-api.sh" pr-threads <PR_NUMBER> > /tmp/claude/threads-<PR_NUMBER>.json 2>&1
-python3 "$SKILL_DIR/gh-parse.py" resolved-threads < /tmp/claude/threads-<PR_NUMBER>.json > /tmp/claude/resolved-<PR_NUMBER>.json 2>&1
+GH_ROOT=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/resolve_github.py") || exit 1
+GH="$GH_ROOT/skills/github-curl/gh.py"
+mkdir -p /tmp/claude
+python3 "$GH" pr-threads <PR_NUMBER> --format resolved-threads > /tmp/claude/resolved-<PR_NUMBER>.json
 ```
 
 Count and report: "Found X resolved threads across Y PRs."

@@ -70,6 +70,67 @@ for needle in 'src/Protocol/' 'migrations/Version' 'codeCoverageIgnore'; do
   check "no match for '$needle'" "0" "$hits"
 done
 
+echo "== commands =="
+
+for c in check learn; do
+  check "command $c exists" "yes" \
+    "$([ -f "$ROOT/commands/$c.md" ] && echo yes || echo no)"
+done
+
+# The retired tool must not be referenced anywhere.
+check "no reference to the retired shell tool" "" \
+  "$(grep -rl 'gh-api\.sh\|gh-parse\.py' "$ROOT/commands" "$ROOT/skills" "$ROOT/agents" 2>/dev/null)"
+
+# No command may reach into a project-local skill directory.
+check "no project-local skill path" "" \
+  "$(grep -rl '\.claude/skills/github-curl' "$ROOT/commands" 2>/dev/null)"
+
+echo "== github resolver =="
+
+RESOLVE="$ROOT/scripts/resolve_github.py"
+
+mkdir -p "$WORK/override"
+check "CLAUDE_GITHUB_ROOT wins" "$WORK/override" \
+  "$(CLAUDE_GITHUB_ROOT="$WORK/override" python3 "$RESOLVE" 2>&1)"
+
+printf '{"version":2,"plugins":{}}' > "$WORK/none.json"
+# -u CLAUDE_GITHUB_ROOT: the suite is run with that override set, and the
+# override outranks the state file. Left in place it would mask the very
+# absence this asserts, and the check would pass without testing anything.
+check_status "missing dependency exits 1" 1 \
+  env -u CLAUDE_GITHUB_ROOT CLAUDE_PLUGIN_STATE="$WORK/none.json" python3 "$RESOLVE"
+
+echo "== learn calls only what exists =="
+
+GHDIR="$(CLAUDE_GITHUB_ROOT="${CLAUDE_GITHUB_ROOT:-}" python3 "$RESOLVE" 2>/dev/null)/skills/github-curl"
+if [ ! -f "$GHDIR/gh.py" ]; then
+  printf '  FAIL contract test cannot run: github plugin not resolved\n'
+  printf '       fix: /plugin install github@lounisbou, or set CLAUDE_GITHUB_ROOT\n'
+  fail=$((fail + 1))
+else
+  phantom=$(python3 - "$GHDIR" "$ROOT" <<'PYREV'
+import os, re, sys
+sys.path.insert(0, sys.argv[1])
+import gh
+from ghlib import fmt
+subs = set([a for a in gh.build_parser()._actions if a.dest == "command"][0].choices)
+fmts = set(fmt._FORMATTERS)
+bad = []
+for name in ("check", "learn"):
+    path = os.path.join(sys.argv[2], "commands", name + ".md")
+    for i, line in enumerate(open(path, encoding="utf-8"), 1):
+        m = re.search(r'python3\s+"\$GH"\s+([a-z][a-z0-9-]+)', line)
+        if m and m.group(1) not in subs:
+            bad.append("%s:%d subcommand %s" % (name, i, m.group(1)))
+        for f in re.finditer(r'--format\s+([a-z][a-z0-9-]+)', line):
+            if f.group(1) not in fmts:
+                bad.append("%s:%d format %s" % (name, i, f.group(1)))
+print(" ".join(bad))
+PYREV
+)
+  check "every command invocation names something real" "" "$phantom"
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
