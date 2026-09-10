@@ -18,21 +18,56 @@ in the existing codebase. No evidence, no finding.
 - `norms-documentation` — missing documentation where the project's own conventions require it
 - `norms-test-coverage` — coverage gaps relative to the project's existing baseline
 
-## Commands
+## Commands and skills
 
-- `/norms:check` — runs the eight agents in parallel against the current diff
-- `/norms:learn` — after a PR is merged or reviewed, captures reviewer feedback as
-  reusable rules in the project's `CONTRIBUTING.md`
+- `/norms:check` — runs the eight agents above in parallel against the current diff
+- `/norms:learn` — after a PR is merged or reviewed, reads its resolved review
+  threads and turns the generalizable ones into rules in the project's own
+  `CONTRIBUTING.md`
+- `find-pattern` skill — pre-implementation pattern discovery for a given file type
+- `validate` skill — validates `CONTRIBUTING.md` structure before `/norms:check` relies on it
 
-## Skills
+## CONTRIBUTING.md stays with the project
 
-- `find-pattern` — pre-implementation pattern discovery for a given file type
-- `validate` — validates `CONTRIBUTING.md` structure before `/norms:check` relies on it
+`CONTRIBUTING.md` lives at the root of whatever project you run these commands
+in, not inside this plugin — the plugin never bundles or ships one. A copy
+committed here would ship one project's conventions to every other project
+that installs it.
+
+## GitHub dependency
+
+The plugin's manifest (`.claude-plugin/plugin.json`) declares `"dependencies":
+["github@lounisbou"]`. Only `/norms:learn` uses it, to fetch a PR's resolved
+review threads; `/norms:check`, `find-pattern`, and `validate` work offline
+and never touch it.
 
 ## Installation
 
-Add this repository as a Claude Code plugin marketplace and install the `norms` plugin.
+```
+/plugin marketplace add LounisBou/claude-norms
+/plugin install norms@claude-norms
+```
 
-## License
+Once the aggregate `lounisbou` marketplace lists this plugin, `norms@lounisbou`
+becomes the canonical install key instead.
 
-MIT
+## Tests
+
+```
+CLAUDE_GITHUB_ROOT=<path to a github plugin checkout> bash tests/run-tests.sh
+```
+
+The suite runs offline and needs no GitHub account or installed plugin; it
+resolves the `github` plugin from `CLAUDE_GITHUB_ROOT` (or the platform's own
+install record) purely to check that `/norms:learn` calls only subcommands and
+formats that tool actually exposes. If the `github` plugin can't be resolved,
+the suite fails loudly with an `error:`/`fix:` pair rather than skipping the
+check. Sample run:
+
+```
+20 passed, 0 failed
+```
+
+## Licence
+
+MIT.
