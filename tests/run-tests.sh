@@ -116,7 +116,7 @@ check_status "missing dependency exits 1" 1 \
 
 echo "== learn calls only what exists =="
 
-GHDIR="$(CLAUDE_GITHUB_ROOT="${CLAUDE_GITHUB_ROOT:-}" python3 "$RESOLVE" 2>/dev/null)/skills/github-curl"
+GHDIR="$(CLAUDE_GITHUB_ROOT="${CLAUDE_GITHUB_ROOT:-}" python3 "$RESOLVE" 2>/dev/null)/engine"
 if [ ! -f "$GHDIR/gh.py" ]; then
   printf '  FAIL contract test cannot run: github plugin not resolved\n'
   printf '       fix: /plugin install github@lounisbou, or set CLAUDE_GITHUB_ROOT\n'
