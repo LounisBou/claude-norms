@@ -40,10 +40,10 @@ check "declares the github dependency" "github@lounisbou" \
 check "marketplace lists the plugin" "norms" \
   "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["plugins"][0]["name"])' "$ROOT/.claude-plugin/marketplace.json")"
 
-check "plugin version" "0.1.1" \
+check "plugin version" "0.1.2" \
   "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/.claude-plugin/plugin.json")"
 
-check "marketplace plugin version" "0.1.1" \
+check "marketplace plugin version" "0.1.2" \
   "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["plugins"][0]["version"])' "$ROOT/.claude-plugin/marketplace.json")"
 
 echo "== components =="
