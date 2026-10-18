@@ -50,6 +50,11 @@ echo "== components =="
 
 check "eight agents" "8" "$(ls "$ROOT"/agents/norms-*.md | wc -l | tr -d ' ')"
 
+for a in "$ROOT"/agents/norms-*.md; do
+  check "agent $(basename "$a" .md) runs with a read-only tool list" "tools: Read, Grep, Glob, Bash" \
+    "$(sed -n 's/^tools: */tools: /p' "$a" | head -1)"
+done
+
 for s in find-pattern validate; do
   check "skill $s exists" "yes" \
     "$([ -f "$ROOT/skills/$s/SKILL.md" ] && echo yes || echo no)"
