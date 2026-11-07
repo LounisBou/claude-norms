@@ -251,3 +251,29 @@ test('auto false or absent leaves the interactive record unchanged', async () =>
   await m.done($, { open: 0, fixed: 1, passed: 2 })
   expect(recordCalls(calls).map(c => c.detail)).toEqual(['1 fixed, 2 passed, 0 open', '1 fixed, 2 passed, 0 open'])
 })
+
+test('a check run through the Skill tool marks its scope, so its record is written', async () => {
+  resetMark(); resetCache()
+  const calls: any[] = []
+  const { $ } = setup({}, {}, calls)
+  const m = mounted()
+  const { next, seen } = nextOf()
+  await hook(m.hooks, 'tool.call', { tool: 'Skill' }).handler($, { tool: 'Skill', skill: 'norms:check', args: 'report only' }, next)
+  expect(seen[0].args).toContain('report only\n\n<norms-scope>')
+  const out = await m.done($, { open: 0, fixed: 0, passed: 1 })
+  expect(out.result).toBe('record: ' + WRITTEN)
+})
+
+test('another skill run through the Skill tool passes untouched and marks nothing', async () => {
+  resetMark(); resetCache()
+  const calls: any[] = []
+  const { $, argvs } = setup({}, {}, calls)
+  const m = mounted()
+  const { next, seen } = nextOf()
+  const e = { tool: 'Skill', skill: 'norms:learn', args: '12' }
+  await hook(m.hooks, 'tool.call', { tool: 'Skill' }).handler($, e, next)
+  expect(seen[0]).toBe(e)
+  expect(argvs).toEqual([])
+  const out = await m.done($, { open: 0, fixed: 0, passed: 0 })
+  expect(out.isError).toBe(true)
+})

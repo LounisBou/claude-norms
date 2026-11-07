@@ -68,17 +68,31 @@ export function resetCache(): void {
   cached = undefined
 }
 
+// Steps 1 to 3 for one run of /norms:check: the scope is computed, cached for
+// the agents and marked for the record, and its block appended to the words.
+async function withScope($: any, words: string): Promise<string> {
+  const args = parseCheckArgs(words)
+  const scope = await computeScope($, args.base)
+  cached = { scope, at: Date.now() }
+  markScope(scope.head)
+  const refs = await checkPaths($, args.paths)
+  const spawned = String((await $.env.get('ORCHESTRATOR_SPAWNED').catch(() => undefined)) ?? '')
+  const block = scopeBlock(scope, args, refs, args.auto === true || spawned !== '')
+  const typed = words.trim()
+  return (typed ? typed + '\n\n' : '') + block
+}
+
 export function register(on: any): void {
+  // Typed by the person: the host runs command.run.
   on('command.run', { command: 'norms:check' }, async ($: any, e: any, next: any) => {
-    const args = parseCheckArgs(String(e.args ?? ''))
-    const scope = await computeScope($, args.base)
-    cached = { scope, at: Date.now() }
-    markScope(scope.head)
-    const refs = await checkPaths($, args.paths)
-    const spawned = String((await $.env.get('ORCHESTRATOR_SPAWNED').catch(() => undefined)) ?? '')
-    const block = scopeBlock(scope, args, refs, args.auto === true || spawned !== '')
-    const typed = String(e.args ?? '').trim()
-    return next({ ...e, args: (typed ? typed + '\n\n' : '') + block })
+    return next({ ...e, args: await withScope($, String(e.args ?? '')) })
+  }).catch(($: any, e: any, next: any) => next(e))
+
+  // Run by a session through the Skill tool: the host runs no command.run, so
+  // the same steps run at the tool call, its args carrying the block.
+  on('tool.call', { tool: 'Skill' }, async ($: any, e: any, next: any) => {
+    if (String(e.skill ?? '') !== 'norms:check') return next(e)
+    return next({ ...e, args: await withScope($, String(e.args ?? '')) })
   }).catch(($: any, e: any, next: any) => next(e))
 
   on('agent.spawn', async ($: any, e: any, next: any) => {
