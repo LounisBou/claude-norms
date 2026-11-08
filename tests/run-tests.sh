@@ -270,6 +270,19 @@ check "the automatic mode counts only the ERROR findings as open" "yes" \
 check "the automatic mode asks no question and edits no code" "yes" \
   "$(grep -q -F 'Ask no question (no `AskUserQuestion`), wait for no one, edit no code' "$ROOT/commands/check.md" && echo yes || echo no)"
 
+echo "== the host loads the module =="
+
+# The host refuses a whole hooks module for one defect (a second session.end hook
+# without a matcher, a state key it cannot read, a state not declared in the
+# manifest's types), and no tool of the module is registered then. Only the host's
+# own validator sees it, so it runs on the repository root. Without `claude` the
+# check fails: it does not skip.
+if command -v claude >/dev/null 2>&1; then
+  check_status "claude plugin validate passes on the repository" 0 claude plugin validate "$ROOT"
+else
+  check "claude is on PATH, to run claude plugin validate" "found" "absent"
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

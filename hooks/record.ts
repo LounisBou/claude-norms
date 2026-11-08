@@ -34,33 +34,41 @@ export const CHECK_DONE_SCHEMA = {
 // in the host's $.state, which outlives the module's own variables, so a restart
 // of the hooks worker does not lose it, and cleared at session.end. The module
 // variable only holds the mark when $.state refused it, so the check still
-// records in that session.
+// records in that session. The state key is written out at each call: the host
+// loader refuses a key held in a const and passed by reference.
 type Mark = { head: string; at: number }
-const MARK = { plugin: 'norms', key: 'scopeMark' } as const
 let fallback: Mark | undefined
 
 export async function markScope($: any, head: string): Promise<void> {
   const mark: Mark = { head, at: Date.now() }
   try {
-    await $.state.set(MARK, mark)
+    await $.state.set({ plugin: 'norms', key: 'scopeMark' }, mark)
     fallback = undefined
   } catch (err: any) {
     fallback = mark
-    try {
-      const sent = $.ui.log(`norms: the scope mark could not be kept in the session state, it is kept in memory: ${String(err?.message ?? err).trim()}`)
-      if (sent && typeof sent.catch === 'function') sent.catch(() => undefined)
-    } catch {
-      // No line drawn: the mark is kept all the same.
-    }
+    warn($, `norms: the scope mark could not be kept in the session state, it is kept in memory: ${String(err?.message ?? err).trim()}`)
+  }
+}
+
+// One warn line in the session's log. A log that fails or rejects draws nothing:
+// what the line reports has been dealt with all the same.
+function warn($: any, line: string): void {
+  try {
+    const sent = $.ui.log(line)
+    if (sent && typeof sent.catch === 'function') sent.catch(() => undefined)
+  } catch {
+    // No line drawn.
   }
 }
 
 // The mark ends with its session. The scope of $.state is not known to be the
 // session's, so it is cleared at session.end, as the implement plugin clears its own.
-async function clearMark($: any): Promise<void> {
+// Called from the module's one session.end hook, in guards.ts: the host refuses a
+// second session.end hook without a matcher.
+export async function clearMark($: any): Promise<void> {
   fallback = undefined
   try {
-    await $.state.set(MARK, null)
+    await $.state.set({ plugin: 'norms', key: 'scopeMark' }, null)
   } catch {
     // Refused: nothing is left to do at the end of a session.
   }
@@ -68,7 +76,7 @@ async function clearMark($: any): Promise<void> {
 
 async function readMark($: any): Promise<Mark | undefined> {
   try {
-    const stored = (await $.state.get(MARK))?.value
+    const stored = (await $.state.get({ plugin: 'norms', key: 'scopeMark' }))?.value
     if (stored?.head) return stored as Mark
   } catch {
     // Unreadable: the memory copy, if any, is the mark.
@@ -159,14 +167,10 @@ export function register(on: any): void {
       await $.tool.register({
         name: 'check_done', description: CHECK_DONE_DESCRIPTION, inputSchema: CHECK_DONE_SCHEMA, isDeferred: false,
       })
-    } catch {
-      // Not listed: the report goes without a record line.
+    } catch (err: any) {
+      // Not listed: the report goes without a record line, and the session says why.
+      warn($, `norms: mcp__norms__check_done could not be registered, the report goes without a record line: ${String(err?.message ?? err).trim()}`)
     }
-    return next(e)
-  }).catch(async (_$: any, e: any, next: any) => next(e))
-
-  on('session.end', async ($: any, e: any, next: any) => {
-    await clearMark($)
     return next(e)
   }).catch(async (_$: any, e: any, next: any) => next(e))
 

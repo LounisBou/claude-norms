@@ -4,7 +4,7 @@
 import { expect, test } from 'claude-code/testing'
 import { editDecision, pushDecision, commitDecision, promptCommand, register, resetGuards, guardState } from '../guards.ts'
 import { register as registerAll } from '../register.ts'
-import { register as registerRecord } from '../record.ts'
+import { register as registerRecord, markScope } from '../record.ts'
 import { mount, hook, nextOf, fakeDollar, HEAD, type Hook } from './fakes.ts'
 
 test('under /norms:check, an edit is refused on the command turn and after pass or discuss', () => {
@@ -281,4 +281,26 @@ test('a check run through the Skill tool in automatic mode arms nothing', async 
   // An empty variable is no variable, as in check.md.
   await run(fakeDollar({ env: { ORCHESTRATOR_SPAWNED: '' } }).$, '')
   expect(guardState().mode).toBe('check')
+})
+
+test('the module registers one session.end hook, which the host would refuse twice without a matcher', () => {
+  const ends = mount(registerAll).filter(h => h.event === 'session.end')
+  expect(ends.length).toBe(1)
+})
+
+test('one session.end resets the guards and clears the scope mark', async () => {
+  resetGuards()
+  const hooks = mount(register)
+  const { $, state } = fakeDollar({})
+  await markScope($, HEAD)
+  expect(state.has('norms/scopeMark')).toBe(true)
+  await hook(hooks, 'command.run', { command: 'norms:check' }).handler($, { command: 'norms:check', args: '' }, nextOf().next)
+  expect(guardState().mode).toBe('check')
+
+  const { next, seen } = nextOf()
+  await hook(hooks, 'session.end').handler($, { reason: 'exit' }, next)
+  expect(guardState().mode).toBeUndefined()
+  expect(state.get('norms/scopeMark')).toBeNull()
+  // The event goes on to the hook beneath.
+  expect(seen.length).toBe(1)
 })
