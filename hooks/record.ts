@@ -32,8 +32,9 @@ export const CHECK_DONE_SCHEMA = {
 
 // The scope /norms:check computed in this session: its head and the time. Kept
 // in the host's $.state, which outlives the module's own variables, so a restart
-// of the hooks worker does not lose it. The module variable only holds the mark
-// when $.state refused it, so the check still records in that session.
+// of the hooks worker does not lose it, and cleared at session.end. The module
+// variable only holds the mark when $.state refused it, so the check still
+// records in that session.
 type Mark = { head: string; at: number }
 const MARK = { plugin: 'norms', key: 'scopeMark' } as const
 let fallback: Mark | undefined
@@ -50,6 +51,17 @@ export async function markScope($: any, head: string): Promise<void> {
     } catch {
       // No line drawn: the mark is kept all the same.
     }
+  }
+}
+
+// The mark ends with its session. The scope of $.state is not known to be the
+// session's, so it is cleared at session.end, as the implement plugin clears its own.
+async function clearMark($: any): Promise<void> {
+  fallback = undefined
+  try {
+    await $.state.set(MARK, null)
+  } catch {
+    // Refused: nothing is left to do at the end of a session.
   }
 }
 
@@ -149,6 +161,11 @@ export function register(on: any): void {
     } catch {
       // Not listed: the report goes without a record line.
     }
+    return next(e)
+  }).catch(async (_$: any, e: any, next: any) => next(e))
+
+  on('session.end', async ($: any, e: any, next: any) => {
+    await clearMark($)
     return next(e)
   }).catch(async (_$: any, e: any, next: any) => next(e))
 

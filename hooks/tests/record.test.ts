@@ -352,3 +352,45 @@ test('a state that cannot be set keeps the mark in memory and writes one warn li
   const clean = setup()
   expect((await m.done(clean.$, { open: 0, fixed: 0, passed: 0 })).isError).toBe(true)
 })
+
+// Every session.end hook of a mount, run as the host runs them: the events each one
+// hands to the hook beneath.
+const endSession = async (hooks: any[], $: any) => {
+  const handed: any[] = []
+  for (const h of hooks.filter(h => h.event === 'session.end')) {
+    const { next, seen } = nextOf()
+    await h.handler($, { reason: 'exit' }, next)
+    handed.push(...seen)
+  }
+  return handed
+}
+
+const REFUSED = 'norms: run /norms:check first: the record follows its own scope'
+
+test('at session.end the mark is cleared from the state, so check_done refuses again', async () => {
+  resetCache()
+  const calls: any[] = []
+  const one = setup({}, {}, calls)
+  const m = mounted()
+  await m.scope(one.$)
+  expect(one.state.has('norms/scopeMark')).toBe(true)
+  const handed = await endSession(m.hooks, one.$)
+  const out = await m.done(one.$, { open: 0, fixed: 0, passed: 0 })
+  expect(out.result).toBe(REFUSED)
+  expect(out.isError).toBe(true)
+  expect(calls).toEqual([])
+  // The event goes on to the hook beneath.
+  expect(handed.length).toBe(1)
+})
+
+test('at session.end the memory copy of the mark is dropped even when the state refuses the clear', async () => {
+  resetCache()
+  const broken = fakeDollar({ stateFails: 'state is read-only', runs: gitRuns(['src/a.ts'], ['src/a.ts']) })
+  const m = mounted()
+  await skillHook(m.hooks).handler(broken.$, { tool: 'Skill', skill: 'norms:check', args: '' }, nextOf().next)
+  // Kept in memory: the state refused it.
+  expect(broken.logs.length).toBe(1)
+  await endSession(m.hooks, broken.$)
+  const out = await m.done(setup().$, { open: 0, fixed: 0, passed: 0 })
+  expect(out.result).toBe(REFUSED)
+})
