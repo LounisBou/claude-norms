@@ -78,7 +78,11 @@ async function git($: any, argv: string[]): Promise<string> {
 
 const count = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined)
 
-const none = (why: string) => `record: none — ${why}`
+const NONE = 'record: none — '
+const none = (why: string) => NONE + why
+
+// Whether the answer of checkDone is a record written, not a refusal or a `none`.
+const wroteRecord = (answer: { result: string; isError?: boolean }) => !answer.isError && !answer.result.startsWith(NONE)
 
 // The answer of a tool called through $.tool.call, as text, or the reason it
 // gave none.
@@ -149,9 +153,11 @@ export function register(on: any): void {
   }).catch(async (_$: any, e: any, next: any) => next(e))
 
   on('tool.call', { tool: CHECK_DONE_TOOL }, async ($: any, e: any) => {
-    // The main loop's call only: a subagent's is not the walkthrough's.
-    if (!e.agentId) endSkillCheck()
-    return checkDone($, e)
+    const answer = await checkDone($, e)
+    // The main loop's call only (a subagent's is not the walkthrough's), and only
+    // once the record is written: a refused call leaves the guards armed.
+    if (!e.agentId && wroteRecord(answer)) endSkillCheck()
+    return answer
   })
     .catch(async () => ({ result: none('the norms module failed'), isError: false }))
 }

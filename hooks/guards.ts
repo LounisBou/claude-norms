@@ -15,7 +15,8 @@
 //   command the user submits;
 // - the mode is armed by the typed command (command.run) or by the Skill tool
 //   call of a session that runs it, which no slash prompt follows: that one also
-//   ends at the check's check_done, and is not armed in automatic mode.
+//   ends at the check's check_done once that wrote its record (a refused call
+//   leaves the guards armed), and is not armed in automatic mode.
 // A guard that fails lets the call through: the markdown still states every rule.
 import { SKILL_MATCHER as CHECK_SKILL_MATCHER } from './check.ts'
 import { parseCheckArgs } from './scope.ts'
@@ -92,9 +93,9 @@ export function guardState(): { mode: Mode | undefined; lastPrompt: string | und
   return { mode, lastPrompt }
 }
 
-// The check's last act (hooks/record.ts calls it from the check_done tool, which
-// answers the call itself, so no hook could stand before it) ends a mode that no
-// slash prompt will end: the one a Skill tool call armed.
+// The check's last act, once its record is written (hooks/record.ts calls it from
+// the check_done tool, which answers the call itself, so no hook could stand before
+// it), ends a mode that no slash prompt will end: the one a Skill tool call armed.
 export function endSkillCheck(): void {
   if (viaSkill && mode === 'check') resetGuards()
 }
