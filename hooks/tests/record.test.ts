@@ -42,6 +42,18 @@ function mounted() {
 
 const recordCalls = (calls: any[]) => calls.filter(c => c.tool === 'mcp__github__record')
 
+// Every session.end hook of a mount, run as the host runs them: the events each one
+// hands to the hook beneath.
+const endSession = async (hooks: any[], $: any) => {
+  const handed: any[] = []
+  for (const h of hooks.filter(h => h.event === 'session.end')) {
+    const { next, seen } = nextOf()
+    await h.handler($, { reason: 'exit' }, next)
+    handed.push(...seen)
+  }
+  return handed
+}
+
 test('without a scope computed in this session, the record is refused and nothing is written', async () => {
   const calls: any[] = []
   const { $ } = setup({}, {}, calls)
@@ -339,31 +351,24 @@ test('a state that cannot be set keeps the mark in memory and writes one warn li
     },
   })
   const m = mounted()
-  const { next, seen } = nextOf()
-  await skillHook(m.hooks).handler(broken.$, { tool: 'Skill', skill: 'norms:check', args: '' }, next)
-  // The scope block is still delivered.
-  expect(seen[0].args).toContain('<norms-scope>')
-  expect(broken.logs.length).toBe(1)
-  expect(broken.logs[0]).toContain('state is read-only')
-  expect((await m.done(broken.$, { open: 0, fixed: 0, passed: 0 })).result).toBe('record: ' + WRITTEN)
-
-  // A later mark in the host's state is authoritative again and drops the memory copy.
-  await m.scope(setup().$)
-  const clean = setup()
-  expect((await m.done(clean.$, { open: 0, fixed: 0, passed: 0 })).isError).toBe(true)
-})
-
-// Every session.end hook of a mount, run as the host runs them: the events each one
-// hands to the hook beneath.
-const endSession = async (hooks: any[], $: any) => {
-  const handed: any[] = []
-  for (const h of hooks.filter(h => h.event === 'session.end')) {
+  try {
     const { next, seen } = nextOf()
-    await h.handler($, { reason: 'exit' }, next)
-    handed.push(...seen)
+    await skillHook(m.hooks).handler(broken.$, { tool: 'Skill', skill: 'norms:check', args: '' }, next)
+    // The scope block is still delivered.
+    expect(seen[0].args).toContain('<norms-scope>')
+    expect(broken.logs.length).toBe(1)
+    expect(broken.logs[0]).toContain('state is read-only')
+    expect((await m.done(broken.$, { open: 0, fixed: 0, passed: 0 })).result).toBe('record: ' + WRITTEN)
+
+    // A later mark in the host's state is authoritative again and drops the memory copy.
+    await m.scope(setup().$)
+    const clean = setup()
+    expect((await m.done(clean.$, { open: 0, fixed: 0, passed: 0 })).isError).toBe(true)
+  } finally {
+    // The memory copy of the mark is module state: a failure above must not leave it to the next test.
+    await endSession(m.hooks, setup().$)
   }
-  return handed
-}
+})
 
 const REFUSED = 'norms: run /norms:check first: the record follows its own scope'
 
