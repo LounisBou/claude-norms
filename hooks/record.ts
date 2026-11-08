@@ -167,8 +167,9 @@ export function register(on: any): void {
       await $.tool.register({
         name: 'check_done', description: CHECK_DONE_DESCRIPTION, inputSchema: CHECK_DONE_SCHEMA, isDeferred: false,
       })
-    } catch {
-      // Not listed: the report goes without a record line.
+    } catch (err: any) {
+      // Not listed: the report goes without a record line, and the session says why.
+      warn($, `norms: mcp__norms__check_done could not be registered, the report goes without a record line: ${String(err?.message ?? err).trim()}`)
     }
     return next(e)
   }).catch(async (_$: any, e: any, next: any) => next(e))

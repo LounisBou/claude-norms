@@ -231,6 +231,17 @@ test('session.start lists the tool from the start, and a registration that fails
   expect(second.seen.length).toBe(1)
 })
 
+test('a registration that fails is logged with its error, not swallowed', async () => {
+  const { $, logs } = fakeDollar({})
+  ;($ as any).tool.register = async () => { throw new Error('refused by the host') }
+  const { next, seen } = nextOf()
+  await hook(mounted().hooks, 'session.start').handler($, { cwd: '/work' }, next)
+  expect(logs.length).toBe(1)
+  expect(logs[0]).toContain('norms')
+  expect(logs[0]).toContain('refused by the host')
+  expect(seen.length).toBe(1)
+})
+
 test('an automatic check records that its findings were passed automatically as non-blocking', async () => {
   resetCache()
   const calls: any[] = []
