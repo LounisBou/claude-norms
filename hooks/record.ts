@@ -6,6 +6,7 @@
 // typed or run through the Skill tool (hooks/check.ts sets the mark), so the record follows its own scope. A
 // failure never throws out of the handler: the answer is one `record:` line,
 // the path written or `none` with the reason.
+import { endSkillCheck } from './guards.ts'
 
 export const CHECK_DONE_TOOL = 'mcp__norms__check_done'
 const GH_TOOL = 'mcp__github__gh'
@@ -127,6 +128,10 @@ export function register(on: any): void {
     return next(e)
   }).catch(async (_$: any, e: any, next: any) => next(e))
 
-  on('tool.call', { tool: CHECK_DONE_TOOL }, async ($: any, e: any) => checkDone($, e))
+  on('tool.call', { tool: CHECK_DONE_TOOL }, async ($: any, e: any) => {
+    // The main loop's call only: a subagent's is not the walkthrough's.
+    if (!e.agentId) endSkillCheck()
+    return checkDone($, e)
+  })
     .catch(async () => ({ result: none('the norms module failed'), isError: false }))
 }

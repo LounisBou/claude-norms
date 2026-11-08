@@ -4,7 +4,8 @@
 import { expect, test } from 'claude-code/testing'
 import { editDecision, pushDecision, commitDecision, promptCommand, register, resetGuards, guardState } from '../guards.ts'
 import { register as registerAll } from '../register.ts'
-import { mount, hook, nextOf, fakeDollar } from './fakes.ts'
+import { register as registerRecord } from '../record.ts'
+import { mount, hook, nextOf, fakeDollar, type Hook } from './fakes.ts'
 
 test('under /norms:check, an edit is refused on the command turn and after pass or discuss', () => {
   expect(editDecision('check', '/norms:check', 'src/a.ts')).toContain('no code change')
@@ -169,4 +170,76 @@ test('promptCommand names the command of a slash prompt and nothing else', () =>
   expect(promptCommand('  /commit')).toBe('commit')
   expect(promptCommand('/src/a.ts')).toBeUndefined()
   expect(promptCommand('fix')).toBeUndefined()
+})
+
+// The Skill tool.call hook that names a skill, among the hooks of a mount.
+const skillHookOf = (hooks: Hook[], skill: string) => {
+  const found = hooks.find(h => h.event === 'tool.call' && h.matcher?.tool === 'Skill' && (h.matcher.skill as RegExp).test(skill))
+  if (!found) throw new Error(`no Skill hook for ${skill}`)
+  return found
+}
+
+const editOf = async (hooks: Hook[], $: any, file_path: string, agentId?: string) => {
+  const { next, seen } = nextOf()
+  const out = await hook(hooks, 'tool.call', { tool: 'Edit' }).handler($, { tool: 'Edit', file_path, agentId }, next)
+  return seen.length ? 'ran' : out.deny
+}
+
+test('a /norms:check or /norms:learn run through the Skill tool arms its guards', async () => {
+  resetGuards()
+  const hooks = mount(register)
+  const { $ } = fakeDollar({})
+  const { next, seen } = nextOf()
+  const e = { tool: 'Skill', skill: '/norms:check', args: 'src' }
+  await skillHookOf(hooks, 'norms:check').handler($, e, next)
+  expect(seen).toEqual([e])
+  expect(guardState()).toEqual({ mode: 'check', lastPrompt: '/norms:check src' })
+  expect(await editOf(hooks, $, 'src/a.ts')).toContain('no code change')
+
+  resetGuards()
+  await skillHookOf(hooks, 'norms:learn').handler($, { tool: 'Skill', skill: 'norms:learn', args: '12' }, nextOf().next)
+  expect(guardState()).toEqual({ mode: 'learn', lastPrompt: '/norms:learn 12' })
+  expect(await editOf(hooks, $, 'CONTRIBUTING.md')).toContain('no rule is added')
+
+  // A subagent's Skill call is not the walkthrough's, and no other skill arms a mode.
+  resetGuards()
+  await skillHookOf(hooks, 'norms:check').handler($, { tool: 'Skill', skill: 'norms:check', args: '', agentId: 'agent-1' }, nextOf().next)
+  expect(guardState().mode).toBeUndefined()
+  expect(hooks.some(h => h.matcher?.tool === 'Skill' && (h.matcher.skill as RegExp).test('norms:validate'))).toBe(false)
+})
+
+test('a check run through the Skill tool ends its mode at the main thread\'s check_done, and a typed one does not', async () => {
+  resetGuards()
+  const hooks = mount(on => {
+    register(on)
+    registerRecord(on)
+  })
+  const { $ } = fakeDollar({})
+  const done = (agentId?: string) => hook(hooks, 'tool.call', { tool: 'mcp__norms__check_done' })
+    .handler($, { tool: 'mcp__norms__check_done', open: 0, fixed: 0, passed: 0, agentId })
+  await skillHookOf(hooks, 'norms:check').handler($, { tool: 'Skill', skill: 'norms:check', args: '' }, nextOf().next)
+  await done('agent-1')
+  expect(guardState().mode).toBe('check')
+  await done()
+  expect(guardState().mode).toBeUndefined()
+
+  // Typed by the person: the walkthrough ends as it always did, not at the record.
+  await hook(hooks, 'command.run', { command: 'norms:check' }).handler($, { command: 'norms:check', args: '' }, nextOf().next)
+  await done()
+  expect(guardState().mode).toBe('check')
+})
+
+test('a check run through the Skill tool in automatic mode arms nothing', async () => {
+  resetGuards()
+  const hooks = mount(register)
+  const run = ($: any, args: string) => skillHookOf(hooks, 'norms:check').handler($, { tool: 'Skill', skill: 'norms:check', args }, nextOf().next)
+  await run(fakeDollar({}).$, 'mode=auto')
+  expect(guardState().mode).toBeUndefined()
+  await run(fakeDollar({}).$, 'src\n\n<norms-scope>\nmode: automatic (no question, no edit)\n</norms-scope>')
+  expect(guardState().mode).toBeUndefined()
+  await run(fakeDollar({ env: { ORCHESTRATOR_SPAWNED: '1' } }).$, '')
+  expect(guardState().mode).toBeUndefined()
+  // An empty variable is no variable, as in check.md.
+  await run(fakeDollar({ env: { ORCHESTRATOR_SPAWNED: '' } }).$, '')
+  expect(guardState().mode).toBe('check')
 })
