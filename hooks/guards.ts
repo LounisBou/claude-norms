@@ -20,6 +20,7 @@
 // A guard that fails lets the call through: the markdown still states every rule.
 import { SKILL_MATCHER as CHECK_SKILL_MATCHER } from './check.ts'
 import { parseCheckArgs } from './scope.ts'
+import { clearMark } from './record.ts'
 
 export type Mode = 'check' | 'learn'
 
@@ -164,6 +165,7 @@ export function register(on: any): void {
 
   on('session.end', async ($: any, e: any, next: any) => {
     resetGuards()
+    await clearMark($)
     return next(e)
   }).catch(pass)
 

@@ -4,6 +4,7 @@
 import { expect, test } from 'claude-code/testing'
 import { register as registerCheck, resetCache, SKILL_MATCHER } from '../check.ts'
 import { register as registerRecord, repoOf } from '../record.ts'
+import { register as registerGuards } from '../guards.ts'
 import { mount, hook, nextOf, fakeDollar, gitRuns, HEAD, type FakeSetup } from './fakes.ts'
 
 const NEW_HEAD = 'c'.repeat(40)
@@ -32,6 +33,8 @@ function mounted() {
   const hooks = mount(on => {
     registerCheck(on)
     registerRecord(on)
+    // The module's one session.end hook, which clears the mark, is the guards'.
+    registerGuards(on)
   })
   return {
     scope: (d: any) => hook(hooks, 'command.run', { command: 'norms:check' }).handler(d, { args: '' }, nextOf().next),
