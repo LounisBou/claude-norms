@@ -47,7 +47,8 @@ export async function markScope($: any, head: string): Promise<void> {
   } catch (err: any) {
     fallback = mark
     try {
-      $.ui.log(`norms: the scope mark could not be kept in the session state, it is kept in memory: ${String(err?.message ?? err).trim()}`)
+      const sent = $.ui.log(`norms: the scope mark could not be kept in the session state, it is kept in memory: ${String(err?.message ?? err).trim()}`)
+      if (sent && typeof sent.catch === 'function') sent.catch(() => undefined)
     } catch {
       // No line drawn: the mark is kept all the same.
     }

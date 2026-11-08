@@ -394,3 +394,37 @@ test('at session.end the memory copy of the mark is dropped even when the state 
   const out = await m.done(setup().$, { open: 0, fixed: 0, passed: 0 })
   expect(out.result).toBe(REFUSED)
 })
+
+test('a ui.log that returns a rejected promise has its rejection caught, and the mark is kept in memory', async () => {
+  resetCache()
+  const broken = fakeDollar({
+    stateFails: 'state is read-only',
+    runs: {
+      ...gitRuns(['src/a.ts'], ['src/a.ts']),
+      'git status --porcelain -uno': { stdout: '' },
+      'git remote get-url origin': { stdout: 'git@github.com:Owner/Repo.git\n' },
+    },
+    tool: (input: any) => (input.tool === 'mcp__github__gh' ? { result: '12\n' } : { result: WRITTEN + '\n' }),
+  })
+  // The promise the line returns, spied on: a catch attaches its handler through then.
+  const handlers: unknown[] = []
+  const sent = Promise.reject(new Error('the transcript is closed'))
+  const attach = sent.then.bind(sent)
+  Object.defineProperty(sent, 'then', {
+    value: (ok: any, fail: any) => {
+      handlers.push(fail)
+      return attach(ok, fail)
+    },
+  })
+  ;(broken.$ as any).ui.log = () => sent
+  const m = mounted()
+  try {
+    await skillHook(m.hooks).handler(broken.$, { tool: 'Skill', skill: 'norms:check', args: '' }, nextOf().next)
+    // A rejection with no handler is reported by the runtime on a later tick.
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(handlers.filter(h => typeof h === 'function').length).toBe(1)
+    expect((await m.done(broken.$, { open: 0, fixed: 0, passed: 0 })).result).toBe('record: ' + WRITTEN)
+  } finally {
+    await endSession(m.hooks, setup().$)
+  }
+})
