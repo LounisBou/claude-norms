@@ -12,8 +12,14 @@
 // - under /norms:check, a commit message naming the check, the tooling or the
 //   TODO list is refused unless the user's last words use that word;
 // - an interrupted turn ends the mode, and so do /clear and any other slash
-//   command the user submits.
+//   command the user submits;
+// - the mode is armed by the typed command (command.run) or by the Skill tool
+//   call of a session that runs it, which no slash prompt follows: that one also
+//   ends at the check's check_done once that wrote its record (a refused call
+//   leaves the guards armed), and is not armed in automatic mode.
 // A guard that fails lets the call through: the markdown still states every rule.
+import { SKILL_MATCHER as CHECK_SKILL_MATCHER } from './check.ts'
+import { parseCheckArgs } from './scope.ts'
 
 export type Mode = 'check' | 'learn'
 
@@ -73,14 +79,25 @@ const USER_ORIGINS = ['composer', 'bridge', 'sdk']
 
 let mode: Mode | undefined
 let lastPrompt: string | undefined
+// The mode was armed by a Skill tool call, which no slash prompt follows: it ends
+// at the check's last act too.
+let viaSkill = false
 
 export function resetGuards(): void {
   mode = undefined
   lastPrompt = undefined
+  viaSkill = false
 }
 
 export function guardState(): { mode: Mode | undefined; lastPrompt: string | undefined } {
   return { mode, lastPrompt }
+}
+
+// The check's last act, once its record is written (hooks/record.ts calls it from
+// the check_done tool, which answers the call itself, so no hook could stand before
+// it), ends a mode that no slash prompt will end: the one a Skill tool call armed.
+export function endSkillCheck(): void {
+  if (viaSkill && mode === 'check') resetGuards()
 }
 
 const pass = ($: any, e: any, next: any) => next(e)
@@ -96,14 +113,40 @@ export function promptCommand(text: string): string | undefined {
   return m ? m[1] : undefined
 }
 
+// The Skill tool calls that run a command the model started. The check's own
+// matcher is reused; /norms:learn has the same shape.
+const LEARN_SKILL_MATCHER = { tool: 'Skill', skill: /^\/?norms:learn$/ }
+
+// check.md's automatic mode: nobody types in the session, so there is no walkthrough
+// to guard. `mode=auto` in the words, a scope block that says so, or a spawned session.
+async function isAutomatic($: any, words: string): Promise<boolean> {
+  if (parseCheckArgs(words).auto === true || /^mode: automatic\b/m.test(words)) return true
+  return String((await $.env.get('ORCHESTRATOR_SPAWNED').catch(() => undefined)) ?? '') !== ''
+}
+
 export function register(on: any): void {
   for (const [command, armed] of Object.entries(MODES)) {
     on('command.run', { command }, async ($: any, e: any, next: any) => {
       mode = armed
       lastPrompt = `/${command} ${String(e.args ?? '')}`.trim()
+      viaSkill = false
       return next(e)
     }).catch(pass)
   }
+
+  // Run by a session through the Skill tool: the host runs no command.run, so the
+  // mode is armed at the tool call, for the main loop only.
+  for (const [matcher, armed] of [[CHECK_SKILL_MATCHER, 'check'], [LEARN_SKILL_MATCHER, 'learn']] as const) {
+    on('tool.call', matcher, async ($: any, e: any, next: any) => {
+      const words = String(e.args ?? '')
+      if (e.agentId || (armed === 'check' && await isAutomatic($, words))) return next(e)
+      mode = armed
+      lastPrompt = `/norms:${armed} ${words}`.trim()
+      viaSkill = true
+      return next(e)
+    }).catch(pass)
+  }
+
 
   // Any other command ends the mode: its slash prompt follows its command.run.
   on('prompt.submit', async ($: any, e: any, next: any) => {

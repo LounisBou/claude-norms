@@ -6,6 +6,7 @@
 // typed or run through the Skill tool (hooks/check.ts sets the mark), so the record follows its own scope. A
 // failure never throws out of the handler: the answer is one `record:` line,
 // the path written or `none` with the reason.
+import { endSkillCheck } from './guards.ts'
 
 export const CHECK_DONE_TOOL = 'mcp__norms__check_done'
 const GH_TOOL = 'mcp__github__gh'
@@ -29,17 +30,50 @@ export const CHECK_DONE_SCHEMA = {
   required: ['open', 'fixed', 'passed'],
 }
 
-// The scope /norms:check computed in this session: its head and the time. A
-// module variable, like the scope cache: a reload loses it and asks for a new
-// /norms:check.
-let mark: { head: string; at: number } | undefined
+// The scope /norms:check computed in this session: its head and the time. Kept
+// in the host's $.state, which outlives the module's own variables, so a restart
+// of the hooks worker does not lose it, and cleared at session.end. The module
+// variable only holds the mark when $.state refused it, so the check still
+// records in that session.
+type Mark = { head: string; at: number }
+const MARK = { plugin: 'norms', key: 'scopeMark' } as const
+let fallback: Mark | undefined
 
-export function markScope(head: string): void {
-  mark = { head, at: Date.now() }
+export async function markScope($: any, head: string): Promise<void> {
+  const mark: Mark = { head, at: Date.now() }
+  try {
+    await $.state.set(MARK, mark)
+    fallback = undefined
+  } catch (err: any) {
+    fallback = mark
+    try {
+      const sent = $.ui.log(`norms: the scope mark could not be kept in the session state, it is kept in memory: ${String(err?.message ?? err).trim()}`)
+      if (sent && typeof sent.catch === 'function') sent.catch(() => undefined)
+    } catch {
+      // No line drawn: the mark is kept all the same.
+    }
+  }
 }
 
-export function resetMark(): void {
-  mark = undefined
+// The mark ends with its session. The scope of $.state is not known to be the
+// session's, so it is cleared at session.end, as the implement plugin clears its own.
+async function clearMark($: any): Promise<void> {
+  fallback = undefined
+  try {
+    await $.state.set(MARK, null)
+  } catch {
+    // Refused: nothing is left to do at the end of a session.
+  }
+}
+
+async function readMark($: any): Promise<Mark | undefined> {
+  try {
+    const stored = (await $.state.get(MARK))?.value
+    if (stored?.head) return stored as Mark
+  } catch {
+    // Unreadable: the memory copy, if any, is the mark.
+  }
+  return fallback
 }
 
 // owner/name from a remote url: scp-like, https or ssh://. Undefined for a
@@ -57,7 +91,11 @@ async function git($: any, argv: string[]): Promise<string> {
 
 const count = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined)
 
-const none = (why: string) => `record: none — ${why}`
+const NONE = 'record: none — '
+const none = (why: string) => NONE + why
+
+// Whether the answer of checkDone is a record written, not a refusal or a `none`.
+const wroteRecord = (answer: { result: string; isError?: boolean }) => !answer.isError && !answer.result.startsWith(NONE)
 
 // The answer of a tool called through $.tool.call, as text, or the reason it
 // gave none.
@@ -69,7 +107,7 @@ function textOf(answer: any): { text: string } | { why: string } {
 }
 
 export async function checkDone($: any, input: any): Promise<{ result: string; isError?: boolean }> {
-  if (!mark) return { result: 'norms: run /norms:check first: the record follows its own scope', isError: true }
+  if (!(await readMark($))) return { result: 'norms: run /norms:check first: the record follows its own scope', isError: true }
   const open = count(input?.open)
   const fixed = count(input?.fixed)
   const passed = count(input?.passed)
@@ -127,6 +165,17 @@ export function register(on: any): void {
     return next(e)
   }).catch(async (_$: any, e: any, next: any) => next(e))
 
-  on('tool.call', { tool: CHECK_DONE_TOOL }, async ($: any, e: any) => checkDone($, e))
+  on('session.end', async ($: any, e: any, next: any) => {
+    await clearMark($)
+    return next(e)
+  }).catch(async (_$: any, e: any, next: any) => next(e))
+
+  on('tool.call', { tool: CHECK_DONE_TOOL }, async ($: any, e: any) => {
+    const answer = await checkDone($, e)
+    // The main loop's call only (a subagent's is not the walkthrough's), and only
+    // once the record is written: a refused call leaves the guards armed.
+    if (!e.agentId && wroteRecord(answer)) endSkillCheck()
+    return answer
+  })
     .catch(async () => ({ result: none('the norms module failed'), isError: false }))
 }
