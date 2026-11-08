@@ -30,17 +30,37 @@ export const CHECK_DONE_SCHEMA = {
   required: ['open', 'fixed', 'passed'],
 }
 
-// The scope /norms:check computed in this session: its head and the time. A
-// module variable, like the scope cache: a reload loses it and asks for a new
-// /norms:check.
-let mark: { head: string; at: number } | undefined
+// The scope /norms:check computed in this session: its head and the time. Kept
+// in the host's $.state, which outlives the module's own variables, so a restart
+// of the hooks worker does not lose it. The module variable only holds the mark
+// when $.state refused it, so the check still records in that session.
+type Mark = { head: string; at: number }
+const MARK = { plugin: 'norms', key: 'scopeMark' } as const
+let fallback: Mark | undefined
 
-export function markScope(head: string): void {
-  mark = { head, at: Date.now() }
+export async function markScope($: any, head: string): Promise<void> {
+  const mark: Mark = { head, at: Date.now() }
+  try {
+    await $.state.set(MARK, mark)
+    fallback = undefined
+  } catch (err: any) {
+    fallback = mark
+    try {
+      $.ui.log(`norms: the scope mark could not be kept in the session state, it is kept in memory: ${String(err?.message ?? err).trim()}`)
+    } catch {
+      // No line drawn: the mark is kept all the same.
+    }
+  }
 }
 
-export function resetMark(): void {
-  mark = undefined
+async function readMark($: any): Promise<Mark | undefined> {
+  try {
+    const stored = (await $.state.get(MARK))?.value
+    if (stored?.head) return stored as Mark
+  } catch {
+    // Unreadable: the memory copy, if any, is the mark.
+  }
+  return fallback
 }
 
 // owner/name from a remote url: scp-like, https or ssh://. Undefined for a
@@ -70,7 +90,7 @@ function textOf(answer: any): { text: string } | { why: string } {
 }
 
 export async function checkDone($: any, input: any): Promise<{ result: string; isError?: boolean }> {
-  if (!mark) return { result: 'norms: run /norms:check first: the record follows its own scope', isError: true }
+  if (!(await readMark($))) return { result: 'norms: run /norms:check first: the record follows its own scope', isError: true }
   const open = count(input?.open)
   const fixed = count(input?.fixed)
   const passed = count(input?.passed)
